@@ -99,8 +99,12 @@ async function decryptPayload(encObj, passphrase) {
     false,
     ['decrypt']
   );
-  const plainBuf = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, aesKey, ct);
-  return JSON.parse(new TextDecoder().decode(plainBuf));
+  const rawBuf = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, aesKey, ct);
+  const parsed = JSON.parse(new TextDecoder().decode(rawBuf));
+  const asArr = v => Array.isArray(v) ? v : (v && Array.isArray(v.value) ? v.value : []);
+  parsed.berita = asArr(parsed.berita);
+  parsed.kesimpulan = asArr(parsed.kesimpulan);
+  return parsed;
 }
 
 function escapeHtml(str) {
