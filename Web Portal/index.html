@@ -86,8 +86,10 @@
         </div>
 
         <div class="topbar-controls">
-          <label for="edition-select" class="sr-only">Pilih edisi tanggal</label>
-          <select id="edition-select" class="edition-select"></select>
+          <label for="month-select" class="sr-only">Pilih edisi bulan</label>
+          <select id="month-select" class="edition-select"></select>
+          <label for="day-select" class="sr-only">Pilih tanggal</label>
+          <select id="day-select" class="edition-select"></select>
           <button type="button" id="lock-btn" class="btn-ghost" title="Kunci kembali portal">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
@@ -124,6 +126,32 @@
           <div class="h-diamond hd-3"><img src="assets/jogja-tugu.jpg" alt="Tugu Yogyakarta" /></div>
           <div class="h-diamond hd-4"><img src="assets/jogja-merapi.jpg" alt="Gunung Merapi" /></div>
         </div>
+      </section>
+
+      <!-- BULETIN AUDIO HARIAN (VOICE OVER TERENKRIPSI) -->
+      <section id="vo-card" class="vo-card" aria-label="Buletin Audio Harian" hidden>
+        <div class="vo-header">
+          <div class="vo-title-wrap">
+            <span class="vo-badge">Buletin Audio</span>
+            <div>
+              <h2 class="vo-title" id="vo-title">Ringkasan Suara Harian</h2>
+              <p class="vo-meta" id="vo-meta">Siap diputar setelah terenkripsi terbuka</p>
+            </div>
+          </div>
+          <div class="vo-header-actions">
+            <button type="button" id="vo-speed-btn" class="btn-ghost vo-speed-btn" title="Ubah kecepatan putar">1.0x</button>
+            <button type="button" id="vo-script-btn" class="btn-ghost vo-script-btn" aria-expanded="false">Naskah Buletin</button>
+          </div>
+        </div>
+        <div class="vo-player-row" id="vo-player-row">
+          <button type="button" id="vo-play-btn" class="vo-play-btn" aria-label="Putar atau jeda buletin audio">
+            <svg id="vo-icon-play" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+            <svg id="vo-icon-pause" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <input type="range" id="vo-seek" class="vo-seek" min="0" max="100" value="0" aria-label="Posisi audio" />
+          <span id="vo-time" class="vo-time">0:00 / 0:00</span>
+        </div>
+        <div id="vo-transcript" class="vo-transcript" hidden></div>
       </section>
 
       <!-- KONTROL FILTER & PENCARIAN -->

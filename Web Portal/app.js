@@ -3,11 +3,16 @@ const STORAGE_KEY = 'ojk_diy_medmon_pin_v1';
 const state = {
   pin: '',
   index: null,
-  currentEditionId: null,
+  currentMonthId: null,
+  monthData: null,
+  currentDayId: null,
   editionData: null,
   filterBidang: 'Semua',
   filterTone: 'Semua',
-  searchQuery: ''
+  searchQuery: '',
+  audioCache: new Map(),
+  audioEl: new Audio(),
+  audioSpeed: 1
 };
 
 const els = {
@@ -20,11 +25,24 @@ const els = {
   gateError: document.getElementById('gate-error'),
   unlockBtn: document.getElementById('unlock-btn'),
   lockBtn: document.getElementById('lock-btn'),
-  editionSelect: document.getElementById('edition-select'),
+  monthSelect: document.getElementById('month-select'),
+  daySelect: document.getElementById('day-select'),
   editionTitle: document.getElementById('edition-title'),
   editionSubtitle: document.getElementById('edition-subtitle'),
   toneMeterBar: document.getElementById('tone-meter-bar'),
   toneLegend: document.getElementById('tone-legend'),
+  voCard: document.getElementById('vo-card'),
+  voTitle: document.getElementById('vo-title'),
+  voMeta: document.getElementById('vo-meta'),
+  voSpeedBtn: document.getElementById('vo-speed-btn'),
+  voScriptBtn: document.getElementById('vo-script-btn'),
+  voPlayerRow: document.getElementById('vo-player-row'),
+  voPlayBtn: document.getElementById('vo-play-btn'),
+  voIconPlay: document.getElementById('vo-icon-play'),
+  voIconPause: document.getElementById('vo-icon-pause'),
+  voSeek: document.getElementById('vo-seek'),
+  voTime: document.getElementById('vo-time'),
+  voTranscript: document.getElementById('vo-transcript'),
   searchInput: document.getElementById('search-input'),
   toneFilters: document.getElementById('tone-filters'),
   bidangTabs: document.getElementById('bidang-tabs'),
@@ -53,7 +71,7 @@ function b64ToBytes(b64) {
   return bytes;
 }
 
-async function decryptPayload(encObj, passphrase) {
+async function decryptRawBytes(encObj, passphrase) {
   const salt = b64ToBytes(encObj.salt);
   const iv = b64ToBytes(encObj.iv);
   const ct = b64ToBytes(encObj.ct);
@@ -77,7 +95,6 @@ async function decryptPayload(encObj, passphrase) {
   const aesKeyBytes = rawBytes.slice(0, 32);
   const macKeyBytes = rawBytes.slice(32, 64);
 
-  // Verifikasi HMAC-SHA256 terlebih dahulu (Encrypt-then-MAC)
   const macInput = new Uint8Array(iv.length + ct.length);
   macInput.set(iv, 0);
   macInput.set(ct, iv.length);
@@ -99,11 +116,24 @@ async function decryptPayload(encObj, passphrase) {
     false,
     ['decrypt']
   );
-  const rawBuf = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, aesKey, ct);
+  return crypto.subtle.decrypt({ name: 'AES-CBC', iv }, aesKey, ct);
+}
+
+async function decryptPayload(encObj, passphrase) {
+  const rawBuf = await decryptRawBytes(encObj, passphrase);
   const parsed = JSON.parse(new TextDecoder().decode(rawBuf));
   const asArr = v => Array.isArray(v) ? v : (v && Array.isArray(v.value) ? v.value : []);
-  parsed.berita = asArr(parsed.berita);
-  parsed.kesimpulan = asArr(parsed.kesimpulan);
+
+  if (Array.isArray(parsed.days) || (parsed.days && Array.isArray(parsed.days.value))) {
+    parsed.days = asArr(parsed.days).map(day => ({
+      ...day,
+      berita: asArr(day.berita).map((b, idx) => ({ ...b, _uid: `${day.id}-${b.No || idx}` })),
+      kesimpulan: asArr(day.kesimpulan)
+    }));
+  } else {
+    parsed.berita = asArr(parsed.berita).map((b, idx) => ({ ...b, _uid: `${parsed.id}-${b.No || idx}` }));
+    parsed.kesimpulan = asArr(parsed.kesimpulan);
+  }
   return parsed;
 }
 
@@ -136,27 +166,150 @@ async function fetchJson(url) {
   return res.json();
 }
 
-async function loadEdition(editionId, pin) {
-  const entry = state.index.editions.find(e => e.id === editionId) || state.index.editions[0];
-  if (!entry) throw new Error('Belum ada edisi laporan yang tersedia.');
+async function loadMonth(monthId, pin, targetDayId) {
+  const entry = state.index.months.find(m => m.id === monthId) || state.index.months[0];
+  if (!entry) throw new Error('Belum ada edisi bulanan yang tersedia.');
 
   const encObj = await fetchJson(entry.file);
-  const data = await decryptPayload(encObj, pin);
-  state.currentEditionId = entry.id;
-  state.editionData = data;
+  const monthData = await decryptPayload(encObj, pin);
+  state.currentMonthId = entry.id;
+  state.monthData = monthData;
+  els.monthSelect.value = entry.id;
+
+  const days = monthData.days || [];
+  els.daySelect.innerHTML =
+    days.map(d => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.hariTanggal)} (${d.statistik.total})</option>`).join('') +
+    (days.length > 1 ? `<option value="ALL">Semua Tanggal — ${escapeHtml(monthData.monthLabel)} (${entry.totalNews})</option>` : '');
+
+  const chosenDay = (targetDayId && (targetDayId === 'ALL' || days.some(d => d.id === targetDayId)))
+    ? targetDayId
+    : (days[0] ? days[0].id : 'ALL');
+  selectDay(chosenDay);
+}
+
+function selectDay(dayId) {
+  const days = state.monthData.days || [];
+  state.currentDayId = dayId;
+  els.daySelect.value = dayId;
+
+  if (dayId === 'ALL') {
+    const allNews = days.flatMap(d => d.berita);
+    const sum = k => days.reduce((acc, d) => acc + (d.statistik[k] || 0), 0);
+    state.editionData = {
+      id: `${state.monthData.monthId}-ALL`,
+      hariTanggal: `Bulan ${state.monthData.monthLabel}`,
+      diperbarui: state.monthData.updatedAt,
+      statistik: {
+        total: allNews.length,
+        positif: sum('positif'),
+        netral: sum('netral'),
+        cenderungNegatif: sum('cenderungNegatif'),
+        negatif: sum('negatif')
+      },
+      kesimpulan: days[0] ? days[0].kesimpulan : [],
+      berita: allNews,
+      audioFile: '',
+      naskahVo: ''
+    };
+  } else {
+    state.editionData = days.find(d => d.id === dayId) || days[0];
+  }
+
   state.filterBidang = 'Semua';
   state.filterTone = 'Semua';
   state.searchQuery = '';
   els.searchInput.value = '';
-
   renderEdition();
+}
+
+function formatTime(sec) {
+  if (!Number.isFinite(sec) || sec < 0) return '0:00';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function syncPlayIcons(playing) {
+  els.voIconPlay.hidden = playing;
+  els.voIconPause.hidden = !playing;
+}
+
+function renderVoiceOverCard(d) {
+  state.audioEl.pause();
+  state.audioEl.removeAttribute('src');
+  state.audioEl.load();
+  syncPlayIcons(false);
+  els.voSeek.value = 0;
+  els.voTime.textContent = '0:00 / 0:00';
+  els.voTranscript.hidden = true;
+  els.voScriptBtn.setAttribute('aria-expanded', 'false');
+
+  const hasAudio = Boolean(d.audioFile);
+  const hasScript = Boolean(d.naskahVo && d.naskahVo.trim());
+  if (!hasAudio && !hasScript) {
+    els.voCard.hidden = true;
+    return;
+  }
+
+  els.voCard.hidden = false;
+  els.voTitle.textContent = `Buletin Audio — ${d.hariTanggal}`;
+  els.voMeta.textContent = hasAudio
+    ? 'Ringkasan suara per bidang, potensi pertanyaan, & mitigasi (terenkripsi internal).'
+    : 'Naskah buletin tersedia (audio belum diunggah untuk tanggal ini).';
+  els.voPlayerRow.hidden = !hasAudio;
+  els.voScriptBtn.hidden = !hasScript;
+  els.voSpeedBtn.hidden = !hasAudio;
+
+  if (hasScript) {
+    const paras = d.naskahVo.trim().split(/\r?\n\r?\n+/);
+    els.voTranscript.innerHTML = paras.map(p => `<p>${escapeHtml(p).replace(/\r?\n/g, '<br>')}</p>`).join('');
+  } else {
+    els.voTranscript.innerHTML = '';
+  }
+}
+
+async function toggleVoiceOverPlay() {
+  const d = state.editionData;
+  if (!d || !d.audioFile) return;
+
+  if (!state.audioEl.paused && state.audioEl.src) {
+    state.audioEl.pause();
+    syncPlayIcons(false);
+    return;
+  }
+
+  if (!state.audioEl.src) {
+    els.voPlayBtn.disabled = true;
+    els.voMeta.textContent = 'Mendekripsi audio buletin...';
+    try {
+      let blobUrl = state.audioCache.get(d.audioFile);
+      if (!blobUrl) {
+        const encObj = await fetchJson(d.audioFile);
+        const rawBuf = await decryptRawBytes(encObj, state.pin);
+        const blob = new Blob([rawBuf], { type: encObj.mimeType || d.audioMime || 'audio/mpeg' });
+        blobUrl = URL.createObjectURL(blob);
+        state.audioCache.set(d.audioFile, blobUrl);
+      }
+      state.audioEl.src = blobUrl;
+      state.audioEl.playbackRate = state.audioSpeed;
+      els.voMeta.textContent = 'Ringkasan suara per bidang, potensi pertanyaan, & mitigasi (terenkripsi internal).';
+    } catch (err) {
+      els.voMeta.textContent = err.message || 'Gagal membuka audio buletin.';
+      els.voPlayBtn.disabled = false;
+      return;
+    }
+    els.voPlayBtn.disabled = false;
+  }
+
+  await state.audioEl.play();
+  syncPlayIcons(true);
 }
 
 function renderEdition() {
   const d = state.editionData;
-  els.editionSelect.value = d.id;
-  els.editionTitle.textContent = `Edisi ${d.hariTanggal}`;
+  els.editionTitle.textContent = state.currentDayId === 'ALL' ? d.hariTanggal : `Edisi ${d.hariTanggal}`;
   els.editionSubtitle.textContent = `Rekap ${d.statistik.total} berita sektor jasa keuangan dan ekonomi Daerah Istimewa Yogyakarta.`;
+  renderVoiceOverCard(d);
 
   // Tone Meter
   const total = d.statistik.total || 1;
@@ -248,7 +401,7 @@ function renderFilteredNews() {
           <h2 class="lead-title">${escapeHtml(lead.Judul)}</h2>
           <p class="lead-summary">${escapeHtml(lead.Ringkasan1)}</p>
           <div class="lead-actions">
-            <button type="button" class="btn-primary open-reader" data-no="${lead.No}">Baca Ringkasan Lengkap</button>
+            <button type="button" class="btn-primary open-reader" data-uid="${escapeHtml(lead._uid)}">Baca Ringkasan Lengkap</button>
             <a href="${escapeHtml(lead.Url)}" target="_blank" rel="noopener noreferrer" class="btn-secondary">Buka ${escapeHtml(lead.Media)}</a>
           </div>
         </div>
@@ -299,7 +452,7 @@ function renderFilteredNews() {
                   <h4 class="news-headline">${escapeHtml(it.Judul)}</h4>
                   <p class="news-excerpt">${escapeHtml(it.Ringkasan1)}</p>
                   <div class="news-links">
-                    <button type="button" class="link-action open-reader" data-no="${it.No}">Baca Ringkasan</button>
+                    <button type="button" class="link-action open-reader" data-uid="${escapeHtml(it._uid)}">Baca Ringkasan</button>
                     <a href="${escapeHtml(it.Url)}" target="_blank" rel="noopener noreferrer" class="link-source">
                       <span>Buka Sumber Asli</span>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -320,8 +473,8 @@ function renderFilteredNews() {
   els.newsFeed.innerHTML = html;
 }
 
-function openReader(no) {
-  const item = state.editionData.berita.find(b => b.No === Number(no));
+function openReader(uid) {
+  const item = state.editionData.berita.find(b => b._uid === uid);
   if (!item) return;
 
   els.drawerKanal.textContent = item.Kanal;
@@ -360,12 +513,14 @@ async function tryUnlock(pin, remember) {
   try {
     if (!state.index) {
       state.index = await fetchJson('data/indeks.json');
-      els.editionSelect.innerHTML = state.index.editions
-        .map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.hariTanggal)} (${e.total})</option>`)
+      els.monthSelect.innerHTML = state.index.months
+        .map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.label)} (${m.totalNews})</option>`)
         .join('');
     }
-    const targetId = new URLSearchParams(window.location.search).get('edisi') || state.index.editions[0].id;
-    await loadEdition(targetId, pin);
+    const params = new URLSearchParams(window.location.search);
+    const targetDay = params.get('edisi');
+    const targetMonth = params.get('bulan') || (targetDay ? targetDay.slice(0, 7) : state.index.months[0].id);
+    await loadMonth(targetMonth, pin, targetDay);
     state.pin = pin;
 
     if (remember) localStorage.setItem(STORAGE_KEY, pin);
@@ -396,8 +551,10 @@ els.unlockForm.addEventListener('submit', e => {
 });
 
 els.lockBtn.addEventListener('click', () => {
+  state.audioEl.pause();
   localStorage.removeItem(STORAGE_KEY);
   state.pin = '';
+  state.monthData = null;
   state.editionData = null;
   els.pinInput.value = '';
   els.app.hidden = true;
@@ -405,11 +562,54 @@ els.lockBtn.addEventListener('click', () => {
   els.pinInput.focus();
 });
 
-els.editionSelect.addEventListener('change', async e => {
-  await loadEdition(e.target.value, state.pin);
+els.monthSelect.addEventListener('change', async e => {
+  await loadMonth(e.target.value, state.pin);
   const url = new URL(window.location);
+  url.searchParams.set('bulan', e.target.value);
+  url.searchParams.delete('edisi');
+  window.history.replaceState({}, '', url);
+});
+
+els.daySelect.addEventListener('change', e => {
+  selectDay(e.target.value);
+  const url = new URL(window.location);
+  url.searchParams.set('bulan', state.currentMonthId);
   url.searchParams.set('edisi', e.target.value);
   window.history.replaceState({}, '', url);
+});
+
+els.voPlayBtn.addEventListener('click', toggleVoiceOverPlay);
+
+els.voSpeedBtn.addEventListener('click', () => {
+  const speeds = [1, 1.25, 1.5];
+  const next = speeds[(speeds.indexOf(state.audioSpeed) + 1) % speeds.length];
+  state.audioSpeed = next;
+  state.audioEl.playbackRate = next;
+  els.voSpeedBtn.textContent = `${next.toFixed(next === 1 ? 1 : 2)}x`;
+});
+
+els.voScriptBtn.addEventListener('click', () => {
+  const open = els.voTranscript.hidden;
+  els.voTranscript.hidden = !open;
+  els.voScriptBtn.setAttribute('aria-expanded', String(open));
+});
+
+els.voSeek.addEventListener('input', () => {
+  if (state.audioEl.duration) {
+    state.audioEl.currentTime = (Number(els.voSeek.value) / 100) * state.audioEl.duration;
+  }
+});
+
+state.audioEl.addEventListener('timeupdate', () => {
+  const dur = state.audioEl.duration || 0;
+  const cur = state.audioEl.currentTime || 0;
+  els.voSeek.value = dur ? String(Math.round((cur / dur) * 100)) : '0';
+  els.voTime.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
+});
+
+state.audioEl.addEventListener('ended', () => {
+  syncPlayIcons(false);
+  els.voSeek.value = '0';
 });
 
 els.searchInput.addEventListener('input', e => {
@@ -435,7 +635,7 @@ els.bidangTabs.addEventListener('click', e => {
 
 document.addEventListener('click', e => {
   const btn = e.target.closest('.open-reader');
-  if (btn) openReader(btn.dataset.no);
+  if (btn) openReader(btn.dataset.uid);
 });
 
 els.drawerClose.addEventListener('click', closeReader);
