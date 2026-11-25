@@ -245,7 +245,10 @@ function renderVoiceOverCard(d) {
   els.voScriptBtn.setAttribute('aria-expanded', 'false');
 
   const hasAudio = Boolean(d.audioFile);
-  const hasScript = Boolean(d.naskahVo && d.naskahVo.trim());
+  const rawScript = typeof d.naskahVo === 'string'
+    ? d.naskahVo
+    : (d.naskahVo && typeof d.naskahVo.value === 'string' ? d.naskahVo.value : '');
+  const hasScript = Boolean(rawScript.trim());
   if (!hasAudio && !hasScript) {
     els.voCard.hidden = true;
     return;
@@ -261,7 +264,7 @@ function renderVoiceOverCard(d) {
   els.voSpeedBtn.hidden = !hasAudio;
 
   if (hasScript) {
-    const paras = d.naskahVo.trim().split(/\r?\n\r?\n+/);
+    const paras = rawScript.trim().split(/\r?\n\r?\n+/);
     els.voTranscript.innerHTML = paras.map(p => `<p>${escapeHtml(p).replace(/\r?\n/g, '<br>')}</p>`).join('');
   } else {
     els.voTranscript.innerHTML = '';
