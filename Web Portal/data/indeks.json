@@ -1,19 +1,13 @@
-﻿{
-    "updatedAt":  "2026-11-25T09:24:02+07:00",
-    "editions":  [
-                     {
-                         "id":  "2026-11-25",
-                         "tanggal":  "25 November 2026",
-                         "hariTanggal":  "Rabu, 25 November 2026",
-                         "total":  18,
-                         "file":  "data/2026-11-25.enc.json"
-                     },
-                     {
-                         "id":  "2026-11-24",
-                         "tanggal":  "24 November 2026",
-                         "hariTanggal":  "Selasa, 24 November 2026",
-                         "total":  24,
-                         "file":  "data/2026-11-24.enc.json"
-                     }
-                 ]
+{
+    "mode":  "monthly",
+    "updatedAt":  "2026-11-25T16:03:34+07:00",
+    "months":  [
+                   {
+                       "id":  "2026-11",
+                       "label":  "November 2026",
+                       "totalDays":  2,
+                       "totalNews":  42,
+                       "file":  "data/2026-11.enc.json"
+                   }
+               ]
 }
