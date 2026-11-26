@@ -1,12 +1,12 @@
 {
     "mode":  "monthly",
-    "updatedAt":  "2026-11-25T16:03:34+07:00",
+    "updatedAt":  "2026-11-26T08:08:42+07:00",
     "months":  [
                    {
                        "id":  "2026-11",
                        "label":  "November 2026",
-                       "totalDays":  2,
-                       "totalNews":  42,
+                       "totalDays":  3,
+                       "totalNews":  65,
                        "file":  "data/2026-11.enc.json"
                    }
                ]
